@@ -232,4 +232,258 @@ for name, model in models.items():
  
 print("\nAll six models have been trained.")
  
+# ============================================================
+# 8. MODEL PREDICTIONS
+# ============================================================
 
+predictions = {}
+
+for name, model in models.items():
+
+    y_pred = model.predict(X_test)
+
+    predictions[name] = y_pred
+
+    print(f"\n{name}")
+    print("Predictions:", y_pred)
+
+    print("Actual values:", y_test.to_numpy())
+
+# ============================================================
+# 9. MODEL EVALUATION
+# ============================================================
+
+results = []
+
+for name, y_pred in predictions.items():
+
+    accuracy = accuracy_score(y_test, y_pred)
+
+    precision = precision_score(
+        y_test, y_pred, pos_label=1, zero_division=0
+    )
+
+    recall = recall_score(
+        y_test, y_pred, pos_label=1, zero_division=0
+    )
+
+    f1 = f1_score(
+        y_test, y_pred, pos_label=1, zero_division=0
+    )
+
+    macro_f1 = f1_score(
+        y_test, y_pred, average="macro", zero_division=0
+    )
+
+    results.append({
+        "Algorithm": name,
+        "Accuracy": accuracy,
+        "Precision (High Risk)": precision,
+        "Recall (High Risk)": recall,
+        "F1 (High Risk)": f1,
+        "Macro F1": macro_f1
+    })
+
+results_df = pd.DataFrame(results)
+
+print("MODEL PERFORMANCE COMPARISON")
+
+display(
+    results_df.style.format({
+        "Accuracy": "{:.3f}",
+        "Precision (High Risk)": "{:.3f}",
+        "Recall (High Risk)": "{:.3f}",
+        "F1 (High Risk)": "{:.3f}",
+        "Macro F1": "{:.3f}"
+    })
+)
+
+
+# ============================================================
+# 10. CONFUSION MATRICES
+# ============================================================
+
+for name, y_pred in predictions.items():
+
+    cm = confusion_matrix(
+        y_test,
+        y_pred,
+        labels=[0, 1]
+    )
+
+    disp = ConfusionMatrixDisplay(
+        confusion_matrix=cm,
+        display_labels=["Normal", "High Risk"]
+    )
+
+    disp.plot(cmap="Blues", values_format="d")
+
+    plt.title(f"Confusion Matrix - {name}")
+    plt.show()
+
+    print(f"\n{name} Classification Report")
+
+    print(
+        classification_report(
+            y_test,
+            y_pred,
+            labels=[0, 1],
+            target_names=["Normal", "High Risk"],
+            zero_division=0
+        )
+    )
+
+# ============================================================
+# 11. VISUAL MODEL COMPARISON
+# ============================================================
+
+metrics = [
+    "Accuracy",
+    "Precision (High Risk)",
+    "Recall (High Risk)",
+    "Macro F1"
+]
+
+for metric in metrics:
+
+    plt.figure(figsize=(11, 5))
+
+    sns.barplot(
+        data=results_df,
+        x="Algorithm",
+        y=metric
+    )
+
+    plt.title(f"Model Comparison - {metric}")
+    plt.xlabel("Machine Learning Algorithm")
+    plt.ylabel(metric)
+
+    plt.xticks(rotation=30)
+    plt.ylim(0, 1.05)
+    plt.tight_layout()
+    plt.show()
+
+# ============================================================
+# 12. FIVE-FOLD CROSS-VALIDATION
+# ============================================================
+
+cv = StratifiedKFold(
+    n_splits=5,
+    shuffle=True,
+    random_state=42
+)
+
+cv_results = []
+
+for name, model in models.items():
+
+    scores = cross_val_score(
+        model,
+        X_train,
+        y_train,
+        cv=cv,
+        scoring="f1_macro"
+    )
+
+    cv_results.append({
+        "Algorithm": name,
+        "Mean Macro F1": scores.mean(),
+        "Standard Deviation": scores.std()
+    })
+
+cv_df = pd.DataFrame(cv_results)
+
+print("CROSS-VALIDATION RESULTS")
+
+display(cv_df.sort_values(
+    by="Mean Macro F1",
+    ascending=False
+))
+
+
+# ============================================================
+# 13. FEATURE IMPORTANCE
+# ============================================================
+
+tree_model = models["Decision Tree"]
+forest_model = models["Random Forest"]
+
+tree_importance = tree_model.feature_importances_
+forest_importance = forest_model.feature_importances_
+
+importance_df = pd.DataFrame({
+    "Feature": X.columns,
+    "Decision Tree": tree_importance,
+    "Random Forest": forest_importance
+})
+
+print("FEATURE IMPORTANCE")
+
+display(importance_df)
+
+importance_df.set_index("Feature").plot(
+    kind="bar",
+    figsize=(10, 5)
+)
+
+plt.title("Feature Importance Comparison")
+plt.ylabel("Importance")
+plt.xlabel("Features")
+plt.xticks(rotation=30)
+plt.tight_layout()
+plt.show()
+
+
+# ============================================================
+# 14. MODEL RANKING
+# ============================================================
+
+# FIX 4: choose the best model with CROSS-VALIDATION on the training data,
+# NOT with the test set (the test set must stay unseen during model selection).
+ranked_models = cv_df.sort_values(
+    by=["Mean Macro F1", "Standard Deviation"],
+    ascending=[False, True]
+)
+
+print("MODEL RANKING (by cross-validation Macro F1)")
+
+display(ranked_models)
+
+best_name = ranked_models.iloc[0]["Algorithm"]
+
+print("\nBest model selected by cross-validation:", best_name)
+
+# Display its test performance (test set is used only to REPORT, not to choose)
+best_model = models[best_name]
+
+print("\nBest model classification report on the test set:")
+
+print(
+    classification_report(
+        y_test,
+        predictions[best_name],
+        target_names=["Normal", "High Risk"],
+        zero_division=0
+    )
+)
+
+# ============================================================
+# 15. NEW PUMP PREDICTION
+# ============================================================
+
+new_pump = pd.DataFrame([{
+    "Temperature_C": 75,
+    "Vibration_mm_s": 6.5,
+    "Speed_RPM": 1450,
+    "Operating_Hours": 5000
+}])
+
+prediction = best_model.predict(new_pump)[0]
+
+if prediction == 0:
+    print("Predicted Condition: NORMAL / LOW RISK")
+
+else:
+    print("Predicted Condition: HIGH RISK")
+
+print("\nPrediction:", prediction)
